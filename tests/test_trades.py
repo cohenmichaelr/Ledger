@@ -1,11 +1,7 @@
-"""Week 1 spec. Remove the skip marker once you've implemented api/trades.py.
+"""Week 1 spec for the trades API.
 
 Run just these:  uv run pytest tests/test_trades.py -v
 """
-
-import pytest
-
-pytestmark = pytest.mark.skip(reason="Week 1: implement api/trades.py, then delete this line")
 
 TRADE = {
     "symbol": "aapl",
