@@ -2,14 +2,17 @@
 
 import csv
 import io
+import re
 from dataclasses import dataclass
-from datetime import timezone
+from datetime import datetime, timezone
 
 from pydantic import ValidationError
 
 from ledger.schemas import TradeCreate
 
 COLUMNS = ("date", "symbol", "side", "quantity", "price")
+DATE_FORMATS = "YYYY-MM-DD, an ISO datetime, or M/D/YYYY"
+US_DATE = re.compile(r"\d{1,2}/\d{1,2}/\d{4}")  # 9/1/2026, as US-locale Excel exports dates
 
 
 @dataclass
@@ -31,7 +34,22 @@ def parse_trades_csv(data: bytes) -> list[tuple[int, TradeCreate]]:
     except UnicodeDecodeError:
         raise CsvImportError([RowError(1, "file is not UTF-8 text")]) from None
 
-    reader = csv.DictReader(io.StringIO(text))
+    # newline="" hands line endings to the csv module, which understands \n, \r\n and bare \r
+    # (old Mac/Excel exports). Without it, a \r-only file reads as one broken line.
+    reader = csv.DictReader(io.StringIO(text, newline=""))
+    try:
+        trades, errors = _read_rows(reader)
+    except csv.Error as exc:  # e.g. an unterminated quote
+        raise CsvImportError([RowError(reader.line_num or 1, f"unreadable CSV: {exc}")]) from None
+
+    if errors:
+        raise CsvImportError(errors)
+    if not trades:
+        raise CsvImportError([RowError(1, "file has no trade rows")])
+    return trades
+
+
+def _read_rows(reader: csv.DictReader) -> tuple[list[tuple[int, TradeCreate]], list[RowError]]:
     header = [name.strip().lower() for name in reader.fieldnames or []]
     if sorted(header) != sorted(COLUMNS):
         raise CsvImportError([RowError(1, f"header must be: {','.join(COLUMNS)}")])
@@ -45,28 +63,34 @@ def parse_trades_csv(data: bytes) -> list[tuple[int, TradeCreate]]:
         if None in record or None in record.values():
             errors.append(RowError(row, f"expected {len(COLUMNS)} columns"))
             continue
+        date = record["date"].strip()
+        if US_DATE.fullmatch(date):
+            try:
+                # strptime = parse with an explicit format (like DateTime.ParseExact)
+                date = datetime.strptime(date, "%m/%d/%Y").date().isoformat()
+            except ValueError:
+                errors.append(RowError(row, f"date: {date!r} is not a valid M/D/YYYY date"))
+                continue
         try:
             trade = TradeCreate(
                 symbol=record["symbol"].strip(),
                 side=record["side"].strip().upper(),
                 quantity=record["quantity"].strip(),
                 price=record["price"].strip(),
-                executed_at=record["date"].strip(),
+                executed_at=date,
             )
         except ValidationError as exc:
             reasons = []
             for err in exc.errors():
-                field = "date" if err["loc"][0] == "executed_at" else err["loc"][0]
-                reasons.append(f"{field}: {err['msg']}")
+                if err["loc"][0] == "executed_at":
+                    # pydantic's message ("input is too short") doesn't say what we accept
+                    reasons.append(f"date: {date!r} is not a date; use {DATE_FORMATS}")
+                else:
+                    reasons.append(f"{err['loc'][0]}: {err['msg']}")
             errors.append(RowError(row, "; ".join(reasons)))
             continue
         if trade.executed_at.tzinfo is None:  # a bare date like 2026-09-24 -> midnight UTC
             trade.executed_at = trade.executed_at.replace(tzinfo=timezone.utc)
         trade.symbol = trade.symbol.upper()
         trades.append((row, trade))
-
-    if errors:
-        raise CsvImportError(errors)
-    if not trades:
-        raise CsvImportError([RowError(1, "file has no trade rows")])
-    return trades
+    return trades, errors

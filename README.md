@@ -70,8 +70,11 @@ curl "http://127.0.0.1:8000/trades?symbol=AAPL"
 ### CSV import
 
 `POST /trades/import` takes a multipart file field named `file`. The header must be
-`date,symbol,side,quantity,price`. `date` is an ISO date (`2026-09-24`, read as midnight UTC) or
-datetime. See [samples/trades.csv](samples/trades.csv).
+`date,symbol,side,quantity,price`. `date` is an ISO date (`2026-09-24`), an ISO datetime, or a
+US-style `M/D/YYYY` date (`9/24/2026`, as US-locale Excel saves it); dates without a time are read
+as midnight UTC. `D/M/YYYY` is **not** supported and would be misread. Files saved from Excel work,
+including its UTF-8 byte-order mark and old-Mac `\r` line endings. See
+[samples/trades.csv](samples/trades.csv).
 
 - **All or nothing:** if any row is invalid, nothing is stored and the response is `422` listing
   every bad row, for example `{"detail": [{"row": 3, "reason": "quantity: Input should be greater than 0"}]}`.

@@ -6,6 +6,8 @@ Run just these:  uv run pytest tests/test_trades.py -v
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 TRADE = {
     "symbol": "aapl",
     "side": "BUY",
@@ -70,6 +72,38 @@ def test_import_sample_csv_returns_positions(client):
     assert Decimal(positions["NVDA"]["avg_cost"]) == Decimal("110.25")
 
 
+@pytest.mark.parametrize("eol", ["\n", "\r\n", "\r"], ids=["LF", "CRLF", "CR"])
+def test_import_accepts_any_line_ending(client, eol):
+    # Excel and older Mac tools can save CSVs with bare \r line endings
+    csv = eol.join(["date,symbol,side,quantity,price", "2026-09-01,AAPL,BUY,10,180"]) + eol
+    r = upload(client, csv)
+    assert r.status_code == 200
+    assert r.json()[0]["symbol"] == "AAPL"
+
+
+def test_import_unreadable_csv_returns_422_not_500(client):
+    # a field over the csv module's size limit makes the reader itself raise csv.Error
+    r = upload(client, "date,symbol,side,quantity,price\n" + "x" * 200_000 + "\n")
+    assert r.status_code == 422
+    [error] = r.json()["detail"]
+    assert error["reason"].startswith("unreadable CSV")
+
+
+def test_import_accepts_us_dates(client):
+    # US-locale Excel saves dates as M/D/YYYY
+    csv = "date,symbol,side,quantity,price\n9/1/2026,AAPL,BUY,10,180\n12/31/2026,MSFT,BUY,5,400\n"
+    assert upload(client, csv).status_code == 200
+    dates = [t["executed_at"] for t in client.get("/trades").json()]
+    assert [d[:10] for d in dates] == ["2026-09-01", "2026-12-31"]
+
+
+def test_import_rejects_impossible_us_date(client):
+    r = upload(client, "date,symbol,side,quantity,price\n13/1/2026,AAPL,BUY,10,180\n")
+    assert r.status_code == 422
+    [error] = r.json()["detail"]
+    assert error == {"row": 2, "reason": "date: '13/1/2026' is not a valid M/D/YYYY date"}
+
+
 def test_import_stores_trades(client):
     upload(client, SAMPLE_CSV.read_bytes())
     assert len(client.get("/trades").json()) == 6
@@ -106,7 +140,9 @@ def test_import_reports_every_bad_row(client):
     assert r.status_code == 422
     errors = r.json()["detail"]
     assert [e["row"] for e in errors] == [2, 3, 4]
-    assert errors[0]["reason"].startswith("date:")
+    assert errors[0]["reason"] == (
+        "date: 'not-a-date' is not a date; use YYYY-MM-DD, an ISO datetime, or M/D/YYYY"
+    )
     assert errors[1]["reason"].startswith("side:")
     assert "columns" in errors[2]["reason"]
 
