@@ -5,6 +5,13 @@ ingest market data, and expose risk metrics over a REST (and later streaming) AP
 
 **Stack:** Python 3.12 · FastAPI · SQLAlchemy 2.0 · Pydantic v2 · pytest · uv · ruff
 
+**Live demo:** <https://ledger-wegu.onrender.com/docs>. Nothing to install: open **POST
+/trades/import**, click **Try it out**, and upload
+[samples/trades.csv](https://github.com/cohenmichaelr/Ledger/blob/main/samples/trades.csv)
+(download it with the "Download raw file" button). It runs on a free tier, so the first request
+after 15 idle minutes takes about a minute, and the data resets on each deploy
+([details](#deployment)).
+
 > **Status:** Week 1 of 5. The trades API (create / list / get) works and is tested.
 > Positions, P&L, market data and risk are next. See the [Roadmap](#roadmap).
 
