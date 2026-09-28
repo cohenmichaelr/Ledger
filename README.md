@@ -12,8 +12,9 @@ ingest market data, and expose risk metrics over a REST (and later streaming) AP
 after 15 idle minutes takes about a minute, and the data resets on each deploy
 ([details](#deployment)).
 
-> **Status:** Week 1 of 5. The trades API (create / list / get) works and is tested.
-> Positions, P&L, market data and risk are next. See the [Roadmap](#roadmap).
+> **Status:** The trades API, CSV trade import with FIFO positions, and a live deployment
+> are done and tested. Realized P&L, end-of-day prices, unrealized P&L and risk metrics are
+> next. See the [Roadmap](#roadmap).
 
 ## Quick start (Windows / PowerShell)
 
