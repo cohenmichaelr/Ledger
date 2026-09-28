@@ -125,7 +125,7 @@ def test_import_oversell_returns_422_with_row_number(client):
     assert r.status_code == 422
     [error] = r.json()["detail"]
     assert error["row"] == 3
-    assert "exceeds position" in error["reason"]
+    assert error["reason"] == "SELL 11 AAPL exceeds position of 10"
 
 
 def test_failed_import_stores_nothing(client):

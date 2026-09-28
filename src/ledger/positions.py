@@ -32,8 +32,13 @@ class OversellError(ValueError):
     def __init__(self, trade: TradeLike, held: Decimal):
         self.trade = trade
         super().__init__(
-            f"SELL {trade.quantity} {trade.symbol} exceeds position of {held.normalize()}"
+            f"SELL {_plain(trade.quantity)} {trade.symbol} exceeds position of {_plain(held)}"
         )
+
+
+def _plain(value: Decimal) -> str:
+    # normalize() drops trailing zeros (10.000000 -> 1E+1); the :f format spec undoes the exponent
+    return f"{value.normalize():f}"
 
 
 def compute_positions(trades: Iterable[TradeLike]) -> list[Position]:
