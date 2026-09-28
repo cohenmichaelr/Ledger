@@ -1,0 +1,12 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Render builds natively with uv (it detects uv.lock) and reads .python-version.
+services:
+  - type: web
+    name: ledger
+    runtime: python
+    plan: free
+    branch: main
+    autoDeployTrigger: commit  # every push to main redeploys
+    buildCommand: uv sync --frozen --no-dev
+    startCommand: uv run --no-sync uvicorn ledger.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health

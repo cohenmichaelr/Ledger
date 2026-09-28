@@ -124,6 +124,22 @@ never touch `ledger.db`.
 3. Register the router in `create_app()` in `main.py`.
 4. Add tests in `tests/test_<resource>.py` that use the `client` fixture.
 
+## Deployment
+
+The app runs on [Render](https://render.com)'s free tier, configured by
+[render.yaml](render.yaml) (a Render "Blueprint"). Every push to `main` redeploys it.
+
+- **Build:** `uv sync --frozen --no-dev`. Render detects `uv.lock` and uses the Python version in
+  `.python-version` (3.12).
+- **Start:** `uvicorn` on the `$PORT` Render provides. `/health` is the health check, and `/`
+  redirects to `/docs`.
+- **Cold starts:** a free service sleeps after 15 minutes without traffic, so the first request
+  after that takes about a minute.
+- **Data resets:** the free tier's disk is temporary. The SQLite database is wiped on every
+  deploy, restart and sleep, so the live app always starts empty.
+
+First-time setup: in Render choose **New → Blueprint**, connect this GitHub repo, and apply.
+
 ## Layout
 
 ```
