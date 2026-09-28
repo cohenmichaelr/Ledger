@@ -1,15 +1,52 @@
 """Trades endpoints: record and look up executed trades."""
 
 from collections.abc import Sequence
+from dataclasses import asdict
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, UploadFile, status
 from sqlalchemy import select
 
 from ledger import models
+from ledger.csv_import import CsvImportError, RowError, parse_trades_csv
 from ledger.db import SessionDep
-from ledger.schemas import TradeCreate, TradeRead
+from ledger.positions import OversellError, compute_positions
+from ledger.schemas import Position, TradeCreate, TradeRead
 
 router = APIRouter(prefix="/trades", tags=["trades"])
+
+
+def _unprocessable(errors: list[RowError]) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=[asdict(e) for e in errors]
+    )
+
+
+@router.post("/import", response_model=list[Position])
+def import_trades(file: UploadFile, session: SessionDep) -> list[Position]:
+    """Import a CSV of trades (all or nothing) and return open positions across all trades."""
+    # UploadFile = a multipart/form-data file field (like IFormFile in ASP.NET)
+    try:
+        parsed = parse_trades_csv(file.file.read())
+    except CsvImportError as exc:
+        raise _unprocessable(exc.errors) from None
+
+    row_of: dict[models.Trade, int] = {}  # ORM objects hash by identity, so they work as keys
+    for row, payload in parsed:
+        trade = models.Trade(**payload.model_dump())
+        session.add(trade)
+        row_of[trade] = row
+    session.flush()  # send the INSERTs (assigns ids) without committing, so we can still roll back
+
+    # Ids follow file order, so equal timestamps keep their order within the file.
+    stmt = select(models.Trade).order_by(models.Trade.executed_at, models.Trade.id)
+    try:
+        positions = compute_positions(session.scalars(stmt))
+    except OversellError as exc:
+        session.rollback()
+        raise _unprocessable([RowError(row_of.get(exc.trade), str(exc))]) from None
+
+    session.commit()
+    return positions
 
 
 @router.post("", response_model=TradeRead, status_code=status.HTTP_201_CREATED)

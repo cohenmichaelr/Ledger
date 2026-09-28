@@ -35,6 +35,7 @@ other commands are the same.
 | `POST` | `/trades` | Record an executed trade | `201` + trade | `422` invalid body |
 | `GET` | `/trades` | List trades ordered by `executed_at`; optional `?symbol=` filter | `200` + list | |
 | `GET` | `/trades/{id}` | Get one trade | `200` + trade | `404` not found |
+| `POST` | `/trades/import` | Import a CSV of trades; returns open positions | `200` + positions | `422` bad rows |
 
 **Trade fields**
 
@@ -64,6 +65,30 @@ Invoke-RestMethod "http://127.0.0.1:8000/trades?symbol=AAPL"
 curl -X POST http://127.0.0.1:8000/trades -H "Content-Type: application/json" \
   -d '{"symbol":"aapl","side":"BUY","quantity":"10","price":"187.50","executed_at":"2026-09-24T14:30:00Z"}'
 curl "http://127.0.0.1:8000/trades?symbol=AAPL"
+```
+
+### CSV import
+
+`POST /trades/import` takes a multipart file field named `file`. The header must be
+`date,symbol,side,quantity,price`. `date` is an ISO date (`2026-09-24`, read as midnight UTC) or
+datetime. See [samples/trades.csv](samples/trades.csv).
+
+- **All or nothing:** if any row is invalid, nothing is stored and the response is `422` listing
+  every bad row, for example `{"detail": [{"row": 3, "reason": "quantity: Input should be greater than 0"}]}`.
+  `row` is the line number in the file (the header is row 1).
+- **Response:** open positions across **all** stored trades, not just this file, sorted by symbol:
+  `[{"symbol": "AAPL", "quantity": "15", "avg_cost": "186.666667"}]`.
+- **Average cost is FIFO:** sells consume the oldest lots first, and `avg_cost` is the cost of the
+  remaining lots divided by the quantity held (rounded to 6 places). Fully closed positions are omitted.
+- A sell larger than the position held is rejected (`422`). Shorts are not supported.
+
+```powershell
+# PowerShell 7+ (Windows PowerShell 5.1 lacks -Form; use curl.exe below)
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/trades/import -Form @{ file = Get-Item samples/trades.csv }
+```
+
+```bash
+curl -F "file=@samples/trades.csv" http://127.0.0.1:8000/trades/import
 ```
 
 ## Configuration
@@ -108,6 +133,9 @@ src/ledger/
   api/         routers, one file per resource  (Controllers)
     health.py
     trades.py
+  csv_import.py  CSV parsing + per-row validation
+  positions.py   FIFO position math (pure functions)
+samples/       sample trades CSV
 tests/         pytest; conftest.py = fixtures
 ```
 
