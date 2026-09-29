@@ -9,8 +9,8 @@ ingest market data, and expose risk metrics over a REST (and later streaming) AP
 /trades/import**, click **Try it out**, and upload
 [samples/trades.csv](https://github.com/cohenmichaelr/Ledger/blob/main/samples/trades.csv)
 (download it with the "Download raw file" button). It runs on a free tier, so the first request
-after 15 idle minutes takes about a minute, and the data resets on each deploy
-([details](#deployment)).
+after 15 idle minutes takes about a minute ([details](#deployment)). The demo is shared, so you
+may see trades other visitors imported.
 
 > **Status:** The trades API, CSV trade import with FIFO positions, and a live deployment
 > are done and tested. Realized P&L, end-of-day prices, unrealized P&L and risk metrics are
@@ -109,7 +109,7 @@ file in the working directory. Copy `.env.example` to `.env` to get started.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `LEDGER_DATABASE_URL` | `sqlite:///./ledger.db` | Any SQLAlchemy URL (Postgres arrives in Week 2) |
+| `LEDGER_DATABASE_URL` | `sqlite:///./ledger.db` | SQLite locally; a `postgresql://…` URL (e.g. from Neon) in production |
 | `LEDGER_DEBUG` | `false` | |
 
 ## Development
@@ -143,10 +143,18 @@ The app runs on [Render](https://render.com)'s free tier, configured by
   redirects to `/docs`.
 - **Cold starts:** a free service sleeps after 15 minutes without traffic, so the first request
   after that takes about a minute.
-- **Data resets:** the free tier's disk is temporary. The SQLite database is wiped on every
-  deploy, restart and sleep, so the live app always starts empty.
+- **Database:** [Neon](https://neon.com) free-tier Postgres, so data survives deploys, restarts
+  and sleeps. Render's own disk is temporary, which is why the app doesn't use SQLite there.
+  Neon suspends after 5 idle minutes and wakes on the next query in about a second.
 
-First-time setup: in Render choose **New → Blueprint**, connect this GitHub repo, and apply.
+First-time setup:
+1. In Neon, create a project and copy its connection string (`postgresql://…`).
+2. In Render choose **New → Blueprint**, connect this GitHub repo, and apply. When asked, or later
+   under the service's **Environment** tab, set `LEDGER_DATABASE_URL` to the Neon connection
+   string.
+
+Tables are created on startup (`create_all`). There are no migrations yet, so a change to an
+existing table means resetting the database.
 
 ## Layout
 

@@ -20,7 +20,9 @@ class Base(DeclarativeBase):
 def make_engine(url: str):
     # SQLite + FastAPI's threadpool needs check_same_thread=False
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, connect_args=connect_args)
+    # pool_pre_ping tests each pooled connection before use. Neon closes connections when it
+    # suspends after 5 idle minutes; without this the first request afterwards would fail.
+    return create_engine(url, connect_args=connect_args, pool_pre_ping=True)
 
 
 engine = make_engine(get_settings().database_url)

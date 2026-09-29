@@ -5,6 +5,7 @@ C# analogy: this is your appsettings.json + IOptions<T>.
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +14,16 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./ledger.db"
     debug: bool = False
+
+    @field_validator("database_url")
+    @classmethod
+    def use_psycopg_driver(cls, url: str) -> str:
+        # Hosts like Neon hand out postgresql://... (or postgres://...) URLs. SQLAlchemy would
+        # pick the psycopg2 driver for those; we install psycopg 3, so name it explicitly.
+        for prefix in ("postgresql://", "postgres://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg://" + url.removeprefix(prefix)
+        return url
 
 
 @lru_cache

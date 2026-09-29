@@ -23,6 +23,7 @@ class TradeRead(TradeCreate):
     model_config = ConfigDict(from_attributes=True)  # allows TradeRead.model_validate(orm_obj)
 
     id: int
+    portfolio_id: int
 
 
 class Position(BaseModel):

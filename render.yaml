@@ -10,3 +10,8 @@ services:
     buildCommand: uv sync --frozen --no-dev
     startCommand: uv run --no-sync uvicorn ledger.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
+    envVars:
+      # Neon Postgres connection string. sync: false = a secret you enter in the Render
+      # dashboard (Environment tab); it is never committed. Unset -> SQLite (wiped on deploy).
+      - key: LEDGER_DATABASE_URL
+        sync: false
