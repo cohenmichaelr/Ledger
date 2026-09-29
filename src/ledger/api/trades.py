@@ -1,25 +1,19 @@
 """Trades endpoints: record and look up executed trades."""
 
 from collections.abc import Sequence
-from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from sqlalchemy import select
 
 from ledger import models
-from ledger.csv_import import CsvImportError, RowError, parse_trades_csv
+from ledger.api.errors import unprocessable
+from ledger.csv_import import CsvImportError, parse_trades_csv
 from ledger.db import SessionDep
 from ledger.portfolios import default_portfolio
-from ledger.positions import OversellError, compute_positions
 from ledger.schemas import Position, TradeCreate, TradeRead
+from ledger.trade_service import TradesRejected, add_trades
 
 router = APIRouter(prefix="/trades", tags=["trades"])
-
-
-def _unprocessable(errors: list[RowError]) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=[asdict(e) for e in errors]
-    )
 
 
 @router.post("/import", response_model=list[Position])
@@ -29,29 +23,12 @@ def import_trades(file: UploadFile, session: SessionDep) -> list[Position]:
     try:
         parsed = parse_trades_csv(file.file.read())
     except CsvImportError as exc:
-        raise _unprocessable(exc.errors) from None
+        raise unprocessable(exc.errors) from None
 
-    portfolio = default_portfolio(session)
-    row_of: dict[models.Trade, int] = {}  # ORM objects hash by identity, so they work as keys
-    for row, payload in parsed:
-        trade = models.Trade(**payload.model_dump(), portfolio_id=portfolio.id)
-        session.add(trade)
-        row_of[trade] = row
-    session.flush()  # send the INSERTs (assigns ids) without committing, so we can still roll back
-
-    # Ids follow file order, so equal timestamps keep their order within the file.
-    stmt = (
-        select(models.Trade)
-        .where(models.Trade.portfolio_id == portfolio.id)
-        .order_by(models.Trade.executed_at, models.Trade.id)
-    )
     try:
-        positions = compute_positions(session.scalars(stmt))
-    except OversellError as exc:
-        session.rollback()
-        raise _unprocessable([RowError(row_of.get(exc.trade), str(exc))]) from None
-
-    session.commit()
+        _, positions = add_trades(session, default_portfolio(session).id, parsed)
+    except TradesRejected as exc:
+        raise unprocessable(exc.errors) from None
     return positions
 
 

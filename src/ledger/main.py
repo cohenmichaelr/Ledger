@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from ledger.api import health, trades
+from ledger.api import health, portfolios, trades
 from ledger.db import Base, engine
 
 
@@ -19,6 +19,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Ledger", version="0.1.0", lifespan=lifespan)
     app.include_router(health.router)
     app.include_router(trades.router)
+    app.include_router(portfolios.router)
     return app
 
 

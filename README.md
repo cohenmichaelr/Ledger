@@ -40,6 +40,10 @@ other commands are the same.
 | Method | Path | Description | Success | Errors |
 |---|---|---|---|---|
 | `GET` | `/health` | Liveness check | `200 {"status": "ok"}` | |
+| `POST` | `/portfolios` | Create a portfolio (`{"name": "Retirement"}`) | `201` + portfolio | `409` name taken, `422` invalid name |
+| `GET` | `/portfolios` | List portfolios | `200` + list | |
+| `POST` | `/portfolios/{id}/trades` | Add one trade (JSON) or a CSV (multipart `file`) | `201` + trade, or list of trades for a CSV | `404`, `415`, `422` |
+| `GET` | `/portfolios/{id}/trades` | List the portfolio's trades, newest first | `200` + list | `404` unknown portfolio |
 | `POST` | `/trades` | Record an executed trade | `201` + trade | `422` invalid body |
 | `GET` | `/trades` | List trades ordered by `executed_at`; optional `?symbol=` filter | `200` + list | |
 | `GET` | `/trades/{id}` | Get one trade | `200` + trade | `404` not found |
@@ -55,6 +59,7 @@ other commands are the same.
 | `price` | decimal | `> 0` |
 | `executed_at` | ISO-8601 datetime | e.g. `2026-09-24T14:30:00Z` |
 | `id` | int | response only |
+| `portfolio_id` | int | response only |
 
 Quantities and prices are `Decimal` end to end (`NUMERIC(18,6)` in the DB), never `float`.
 Send them as JSON strings (`"187.50"`) to avoid rounding errors.
@@ -75,9 +80,35 @@ curl -X POST http://127.0.0.1:8000/trades -H "Content-Type: application/json" \
 curl "http://127.0.0.1:8000/trades?symbol=AAPL"
 ```
 
+### Portfolios
+
+A portfolio has a unique `name` (1–64 characters, surrounding spaces trimmed). The `/trades`
+endpoints predate portfolios and put every trade into a portfolio named **Default**, created on
+first use.
+
+`POST /portfolios/{id}/trades` picks the format from the request's `Content-Type`:
+
+- `application/json`: one trade (see **Trade fields**). Responds `201` with the trade.
+- `multipart/form-data` with a CSV in the `file` field (format below). Responds `201` with the
+  list of created trades, in file order.
+- Anything else: `415`.
+
+Both are all or nothing, and a sell larger than the quantity held **in that portfolio** is
+rejected with `422` (`row` is `null` for a JSON trade). An unknown portfolio id is `404`, checked
+before the body is read.
+
+```bash
+curl -X POST http://127.0.0.1:8000/portfolios -H "Content-Type: application/json" -d '{"name":"Retirement"}'
+curl -X POST http://127.0.0.1:8000/portfolios/1/trades -H "Content-Type: application/json" \
+  -d '{"symbol":"aapl","side":"BUY","quantity":"10","price":"187.50","executed_at":"2026-09-24T14:30:00Z"}'
+curl -F "file=@samples/trades.csv" http://127.0.0.1:8000/portfolios/1/trades
+curl http://127.0.0.1:8000/portfolios/1/trades
+```
+
 ### CSV import
 
-`POST /trades/import` takes a multipart file field named `file`. The header must be
+`POST /trades/import` (Default portfolio) and `POST /portfolios/{id}/trades` take a multipart
+file field named `file`. The header must be
 `date,symbol,side,quantity,price`. `date` is an ISO date (`2026-09-24`), an ISO datetime, or a
 US-style `M/D/YYYY` date (`9/24/2026`, as US-locale Excel saves it); dates without a time are read
 as midnight UTC. `D/M/YYYY` is **not** supported and would be misread. Files saved from Excel work,
@@ -87,7 +118,8 @@ including its UTF-8 byte-order mark and old-Mac `\r` line endings. See
 - **All or nothing:** if any row is invalid, nothing is stored and the response is `422` listing
   every bad row, for example `{"detail": [{"row": 3, "reason": "quantity: Input should be greater than 0"}]}`.
   `row` is the line number in the file (the header is row 1).
-- **Response:** open positions across **all** stored trades, not just this file, sorted by symbol:
+- **`/trades/import` response:** open positions in the Default portfolio (all its trades, not just
+  this file), sorted by symbol:
   `[{"symbol": "AAPL", "quantity": "15", "avg_cost": "186.666667"}]`.
 - **Average cost is FIFO:** sells consume the oldest lots first, and `avg_cost` is the cost of the
   remaining lots divided by the quantity held (rounded to 6 places). Fully closed positions are omitted.
