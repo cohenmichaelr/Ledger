@@ -136,6 +136,15 @@ FIFO is used because:
 
 Average cost and specific-lot identification are out of scope for v1.
 
+**Proving the math.** [samples/pnl_check_trades.csv](samples/pnl_check_trades.csv) holds 15
+trades (listed out of date order on purpose) and
+[samples/pnl_check_expected.csv](samples/pnl_check_expected.csv) is the FIFO matching worked out
+by hand, one row per lot slice a sell consumes. One AAPL lot is closed by three separate sells,
+and sells span lots, take losses and use fractional quantities. `tests/test_pnl_check.py` uploads
+the trades and asserts `/pnl` matches the hand calculation to the cent (AAPL 1,152.75, MSFT
+-221.40, NVDA 11.925, total 943.275). Both files open in Excel, and the trades file can be
+uploaded through `/docs` to see the same result.
+
 ### CSV import
 
 `POST /trades/import` (Default portfolio) and `POST /portfolios/{id}/trades` take a multipart
