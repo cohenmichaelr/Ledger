@@ -1,4 +1,4 @@
-"""Portfolio endpoints: create/list portfolios, add trades (JSON or CSV), list trades."""
+"""Portfolio endpoints: create/list portfolios, add trades (JSON or CSV), list trades, P&L."""
 
 from decimal import Decimal
 
@@ -164,6 +164,68 @@ def test_trade_values_round_trip(client):
     assert Decimal(t["price"]) == Decimal("187.50")
 
 
+# --- GET /portfolios/{id}/pnl --------------------------------------------------------------------
+
+
+def test_realized_pnl_per_symbol_and_total(client):
+    pid = create_portfolio(client)
+    upload(
+        client,
+        pid,
+        HEADER
+        + "2026-09-01,AAPL,BUY,10,100\n"
+        + "2026-09-02,AAPL,BUY,10,110\n"
+        + "2026-09-03,MSFT,BUY,5,400\n"
+        + "2026-09-04,AAPL,SELL,15,120\n"  # FIFO: 10 x 20 + 5 x 10 = 250
+        + "2026-09-05,MSFT,SELL,5,380\n"  # 5 x -20 = -100
+        + "2026-09-06,NVDA,BUY,1,100\n",  # never sold, so not listed
+    )
+    r = client.get(f"/portfolios/{pid}/pnl")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["portfolio_id"] == pid
+    assert [(s["symbol"], Decimal(s["realized_pnl"])) for s in body["symbols"]] == [
+        ("AAPL", Decimal("250")),
+        ("MSFT", Decimal("-100")),
+    ]
+    assert Decimal(body["total"]) == Decimal("150")
+
+
+def test_realized_pnl_uses_execution_order_not_upload_order(client):
+    pid = create_portfolio(client)
+    upload(client, pid, HEADER + "2026-09-02,AAPL,BUY,10,110\n")
+    upload(client, pid, HEADER + "2026-09-01,AAPL,BUY,10,100\n")  # older lot, added later
+    upload(client, pid, HEADER + "2026-09-03,AAPL,SELL,10,120\n")
+    # the 100 lot was bought first, so it is sold first: 10 x (120 - 100)
+    assert Decimal(client.get(f"/portfolios/{pid}/pnl").json()["total"]) == Decimal("200")
+
+
+def test_realized_pnl_empty_portfolio(client):
+    pid = create_portfolio(client)
+    body = client.get(f"/portfolios/{pid}/pnl").json()
+    assert body["symbols"] == []
+    assert Decimal(body["total"]) == 0
+
+
+def test_realized_pnl_only_counts_that_portfolios_trades(client):
+    a = create_portfolio(client, "A")
+    b = create_portfolio(client, "B")
+    for pid in (a, b):
+        client.post(f"/portfolios/{pid}/trades", json=TRADE)  # 10 @ 187.50
+    client.post(f"/portfolios/{a}/trades", json={**TRADE, "side": "SELL", "price": "200"})
+    assert Decimal(client.get(f"/portfolios/{a}/pnl").json()["total"]) == Decimal("125")
+    assert client.get(f"/portfolios/{b}/pnl").json()["symbols"] == []
+
+
+def test_oversell_returns_422_and_leaves_pnl_unchanged(client):
+    pid = create_portfolio(client)
+    client.post(f"/portfolios/{pid}/trades", json=TRADE)  # hold 10 AAPL
+    before = client.get(f"/portfolios/{pid}/pnl").json()
+    r = client.post(f"/portfolios/{pid}/trades", json={**TRADE, "side": "SELL", "quantity": "11"})
+    assert r.status_code == 422
+    assert client.get(f"/portfolios/{pid}/pnl").json() == before
+
+
 # --- Unknown portfolio ------------------------------------------------------------------------
 
 
@@ -179,5 +241,11 @@ def test_trade_values_round_trip(client):
 )
 def test_unknown_portfolio_returns_404(client, method, kwargs):
     r = getattr(client, method)("/portfolios/9999/trades", **kwargs)
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Portfolio not found"
+
+
+def test_pnl_for_unknown_portfolio_returns_404(client):
+    r = client.get("/portfolios/9999/pnl")
     assert r.status_code == 404
     assert r.json()["detail"] == "Portfolio not found"

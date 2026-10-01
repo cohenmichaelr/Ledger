@@ -33,7 +33,7 @@ Ruff: line length 100, rules `E, F, I, UP, B`. pytest runs with `pythonpath = ["
 - `src/ledger/main.py` app factory `create_app()` · `config.py` settings (`LEDGER_*` env / `.env`)
 - `db.py` engine, `Base`, per-request session via `SessionDep`
 - `models.py` ORM tables (`Portfolio`, `Trade`) · `schemas.py` Pydantic request/response models
-- `positions.py` FIFO position math (`compute_positions`) · `csv_import.py` CSV parsing and row errors
+- `positions.py` FIFO position and realized P&L math (`compute_positions`, `compute_realized_pnl`) · `csv_import.py` CSV parsing and row errors
 - `portfolios.py` default-portfolio helper · `api/` one router per resource
 - `tests/` pytest; the `client` fixture in `conftest.py` gives each test an in-memory database
 - `samples/trades.csv` sample upload

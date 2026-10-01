@@ -12,9 +12,9 @@ ingest market data, and expose risk metrics over a REST (and later streaming) AP
 after 15 idle minutes takes about a minute ([details](#deployment)). The demo is shared, so you
 may see trades other visitors imported.
 
-> **Status:** The trades API, CSV trade import with FIFO positions, and a live deployment
-> are done and tested. Realized P&L, end-of-day prices, unrealized P&L and risk metrics are
-> next. See the [Roadmap](#roadmap).
+> **Status:** The trades API, portfolios, CSV trade import with FIFO positions, realized P&L
+> and a live deployment are done and tested. End-of-day prices, unrealized P&L and risk
+> metrics are next. See the [Roadmap](#roadmap).
 
 ## Quick start (Windows / PowerShell)
 
@@ -103,7 +103,38 @@ curl -X POST http://127.0.0.1:8000/portfolios/1/trades -H "Content-Type: applica
   -d '{"symbol":"aapl","side":"BUY","quantity":"10","price":"187.50","executed_at":"2026-09-24T14:30:00Z"}'
 curl -F "file=@samples/trades.csv" http://127.0.0.1:8000/portfolios/1/trades
 curl http://127.0.0.1:8000/portfolios/1/trades
+curl http://127.0.0.1:8000/portfolios/1/pnl
 ```
+
+### Realized P&L
+
+`GET /portfolios/{id}/pnl` returns the realized P&L of each symbol that has had at least one sell
+(including fully closed positions), sorted by symbol, and the total:
+
+```json
+{"portfolio_id": 1,
+ "symbols": [{"symbol": "AAPL", "realized_pnl": "250.000000"},
+             {"symbol": "MSFT", "realized_pnl": "-100.000000"}],
+ "total": "150.000000"}
+```
+
+Each sell is matched against the oldest open lots first, and every lot slice it consumes realizes
+`quantity x (sell price - lot price)`. Trades are replayed in `executed_at` order, not upload
+order. Figures are rounded to 6 places per symbol and the total is the sum of those figures.
+Fees are not modelled in v1. A sell larger than the position never reaches this endpoint: it is
+rejected with `422` when the trade is added. Unknown portfolio: `404`.
+
+**Why FIFO?** Lot matching decides which purchase a sale closes, which changes the realized
+P&L (buy 10 @ 100, buy 10 @ 110, sell 15 @ 120 realizes 250 under FIFO but 200 under LIFO).
+FIFO is used because:
+
+- It is the IRS default for shares when specific lots aren't identified, so the numbers match
+  what a US broker reports.
+- It is deterministic and easy to check by hand, which makes it testable (see LED-204).
+- Positions already use it, so `avg_cost` on open positions and realized P&L come from one
+  lot-matching routine (`positions._match_fifo`) and always agree.
+
+Average cost and specific-lot identification are out of scope for v1.
 
 ### CSV import
 
@@ -201,7 +232,7 @@ src/ledger/
     health.py
     trades.py
   csv_import.py  CSV parsing + per-row validation
-  positions.py   FIFO position math (pure functions)
+  positions.py   FIFO position and realized P&L math (pure functions)
 samples/       sample trades CSV
 tests/         pytest; conftest.py = fixtures
 ```

@@ -33,6 +33,17 @@ class Position(BaseModel):
     avg_cost: Decimal
 
 
+class SymbolPnl(BaseModel):
+    symbol: str
+    realized_pnl: Decimal
+
+
+class RealizedPnl(BaseModel):
+    portfolio_id: int
+    symbols: list[SymbolPnl]
+    total: Decimal
+
+
 # Annotated[type, constraints] attaches validation to a type, like [StringLength] on a C# property
 PortfolioName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)

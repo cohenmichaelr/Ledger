@@ -1,4 +1,4 @@
-"""Portfolio endpoints: create and list portfolios, add and list their trades."""
+"""Portfolio endpoints: create and list portfolios, add and list their trades, realized P&L."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -15,7 +15,8 @@ from ledger import models
 from ledger.api.errors import unprocessable
 from ledger.csv_import import CsvImportError, RowError, parse_trades_csv
 from ledger.db import SessionDep
-from ledger.schemas import PortfolioCreate, PortfolioRead, TradeCreate, TradeRead
+from ledger.positions import compute_realized_pnl
+from ledger.schemas import PortfolioCreate, PortfolioRead, RealizedPnl, TradeCreate, TradeRead
 from ledger.trade_service import TradesRejected, add_trades
 
 router = APIRouter(prefix="/portfolios", tags=["portfolios"])
@@ -143,3 +144,19 @@ def list_portfolio_trades(portfolio: PortfolioDep, session: SessionDep) -> Seque
         .order_by(models.Trade.executed_at.desc(), models.Trade.id.desc())
     )
     return session.scalars(stmt).all()
+
+
+@router.get("/{portfolio_id}/pnl", response_model=RealizedPnl)
+def get_realized_pnl(portfolio: PortfolioDep, session: SessionDep) -> RealizedPnl:
+    """Realized P&L per symbol and in total, matching sells to buys first-in, first-out.
+
+    Only symbols with at least one sell are listed. Oversells can't occur here: they are
+    rejected with 422 when trades are added.
+    """
+    stmt = (
+        select(models.Trade)
+        .where(models.Trade.portfolio_id == portfolio.id)
+        .order_by(models.Trade.executed_at, models.Trade.id)  # FIFO needs execution order
+    )
+    symbols, total = compute_realized_pnl(session.scalars(stmt))
+    return RealizedPnl(portfolio_id=portfolio.id, symbols=symbols, total=total)
