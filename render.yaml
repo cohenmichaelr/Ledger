@@ -15,3 +15,6 @@ services:
       # dashboard (Environment tab); it is never committed. Unset -> SQLite (wiped on deploy).
       - key: LEDGER_DATABASE_URL
         sync: false
+      # Tiingo API key for end-of-day prices. Also a secret entered in the Render dashboard.
+      - key: LEDGER_TIINGO_API_KEY
+        sync: false

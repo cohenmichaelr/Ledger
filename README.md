@@ -183,6 +183,28 @@ file in the working directory. Copy `.env.example` to `.env` to get started.
 |---|---|---|
 | `LEDGER_DATABASE_URL` | `sqlite:///./ledger.db` | SQLite locally; a `postgresql://…` URL (e.g. from Neon) in production |
 | `LEDGER_DEBUG` | `false` | |
+| `LEDGER_TIINGO_API_KEY` | none | Free key from [tiingo.com](https://www.tiingo.com/account/api/token). Needed for prices. Keep it in `.env` locally and in Render's Environment tab; never commit it |
+
+### Market data
+
+End-of-day closing prices come from **[Tiingo](https://www.tiingo.com)**, through one small
+adapter, `src/ledger/market_data.py`.
+
+**Why Tiingo:** it is built around end-of-day equity prices, which is all v1 needs, and has a
+free API key and a simple JSON endpoint. Alpha Vantage's free tier has tighter call limits, and
+Yahoo Finance has no official API, so it can break without notice.
+
+**Swapping providers:** the app depends only on the `PriceProvider` interface
+(`latest_close(symbol) -> PriceQuote`). A new provider is one new class; nothing else changes.
+
+**Errors:** a missing or rejected key, an unknown symbol, a timeout (10 seconds), a rate limit or
+a provider outage all raise `MarketDataError` with a message that is safe to show to API users.
+
+**Check your key:**
+
+```powershell
+uv run python -m ledger.market_data AAPL MSFT
+```
 
 ## Development
 
@@ -242,6 +264,7 @@ src/ledger/
     trades.py
   csv_import.py  CSV parsing + per-row validation
   positions.py   FIFO position and realized P&L math (pure functions)
+  market_data.py end-of-day prices: PriceProvider interface + Tiingo adapter
 samples/       sample trades CSV
 tests/         pytest; conftest.py = fixtures
 ```

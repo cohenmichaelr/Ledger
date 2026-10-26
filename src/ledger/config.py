@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./ledger.db"
     debug: bool = False
+    tiingo_api_key: str | None = None  # LEDGER_TIINGO_API_KEY; never commit it
 
     @field_validator("database_url")
     @classmethod
