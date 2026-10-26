@@ -29,6 +29,8 @@ class PriceQuote:
     symbol: str
     close: Decimal
     as_of: date  # the trading day this closing price is from
+    # True when the provider failed and this came from the price cache instead (LED-302)
+    stale: bool = False
 
 
 class MarketDataError(Exception):
@@ -107,11 +109,6 @@ class TiingoProvider:
 
     def close(self) -> None:
         self._client.close()
-
-
-def get_price_provider() -> PriceProvider:
-    """FastAPI dependency for the valuation endpoints (LED-303); tests override it with a fake."""
-    return TiingoProvider(get_settings().tiingo_api_key)
 
 
 if __name__ == "__main__":  # runs only via `python -m ledger.market_data ...`, not on import

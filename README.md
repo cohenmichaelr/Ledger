@@ -206,6 +206,18 @@ a provider outage all raise `MarketDataError` with a message that is safe to sho
 uv run python -m ledger.market_data AAPL MSFT
 ```
 
+### Price cache
+
+Prices are stored in the `prices` table (one row per symbol: close, trading day, when it was
+fetched) by `CachedPriceProvider` in `src/ledger/price_cache.py`, which wraps the provider:
+
+- **At most one fetch per symbol per trading day.** "Day" is the New York calendar date, so
+  the cache doesn't roll over at 8 p.m. Eastern the way a UTC date would. Weekends and holidays
+  count as days too (there is no market calendar in v1), so they cost at most one fetch each.
+- **Provider down:** if the fetch fails and the symbol has a cached price, that price is used
+  and marked `stale`. A failed fetch doesn't count, so the next request tries the API again.
+- **Provider down, nothing cached:** the `MarketDataError` is returned to the caller.
+
 ## Development
 
 ```powershell
@@ -265,6 +277,7 @@ src/ledger/
   csv_import.py  CSV parsing + per-row validation
   positions.py   FIFO position and realized P&L math (pure functions)
   market_data.py end-of-day prices: PriceProvider interface + Tiingo adapter
+  price_cache.py prices cached in the database, at most one fetch per symbol per day
 samples/       sample trades CSV
 tests/         pytest; conftest.py = fixtures
 ```
