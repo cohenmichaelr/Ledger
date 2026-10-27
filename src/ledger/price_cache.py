@@ -10,7 +10,7 @@ Rules:
 - If the provider fails and nothing is cached, the MarketDataError propagates.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo  # standard-library time zones (needs the tzdata package on Windows)
 
@@ -73,9 +73,15 @@ def _quote(row: Price, *, stale: bool = False) -> PriceQuote:
     return PriceQuote(symbol=row.symbol, close=row.close, as_of=row.as_of, stale=stale)
 
 
-def get_price_provider(session: SessionDep) -> PriceProvider:
-    """FastAPI dependency for the valuation endpoints (LED-303): Tiingo behind the cache.
+def get_price_provider(session: SessionDep) -> Iterator[PriceProvider]:
+    """FastAPI dependency for the valuation endpoint: Tiingo behind the cache.
 
-    Tests override it with a fake (app.dependency_overrides), so they never reach Tiingo.
+    A `yield` dependency runs the code after `yield` once the request is done, so the HTTP
+    client is closed every time (like a scoped IDisposable). Tests override this with a fake
+    (app.dependency_overrides), so they never reach Tiingo.
     """
-    return CachedPriceProvider(TiingoProvider(get_settings().tiingo_api_key), session)
+    tiingo = TiingoProvider(get_settings().tiingo_api_key)
+    try:
+        yield CachedPriceProvider(tiingo, session)
+    finally:
+        tiingo.close()

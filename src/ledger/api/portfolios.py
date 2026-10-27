@@ -1,4 +1,4 @@
-"""Portfolio endpoints: create and list portfolios, add and list their trades, realized P&L."""
+"""Portfolio endpoints: portfolios, their trades, realized P&L and valuation."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -15,9 +15,19 @@ from ledger import models
 from ledger.api.errors import unprocessable
 from ledger.csv_import import CsvImportError, RowError, parse_trades_csv
 from ledger.db import SessionDep
-from ledger.positions import compute_realized_pnl
-from ledger.schemas import PortfolioCreate, PortfolioRead, RealizedPnl, TradeCreate, TradeRead
+from ledger.market_data import PriceProvider
+from ledger.positions import compute_holdings, compute_realized_pnl
+from ledger.price_cache import get_price_provider
+from ledger.schemas import (
+    PortfolioCreate,
+    PortfolioRead,
+    PortfolioValue,
+    RealizedPnl,
+    TradeCreate,
+    TradeRead,
+)
 from ledger.trade_service import TradesRejected, add_trades
+from ledger.valuation import value_holdings
 
 router = APIRouter(prefix="/portfolios", tags=["portfolios"])
 
@@ -146,6 +156,15 @@ def list_portfolio_trades(portfolio: PortfolioDep, session: SessionDep) -> Seque
     return session.scalars(stmt).all()
 
 
+def _trades_in_execution_order(session: SessionDep, portfolio_id: int) -> Sequence[models.Trade]:
+    stmt = (
+        select(models.Trade)
+        .where(models.Trade.portfolio_id == portfolio_id)
+        .order_by(models.Trade.executed_at, models.Trade.id)  # FIFO needs execution order
+    )
+    return session.scalars(stmt).all()
+
+
 @router.get("/{portfolio_id}/pnl", response_model=RealizedPnl)
 def get_realized_pnl(portfolio: PortfolioDep, session: SessionDep) -> RealizedPnl:
     """Realized P&L per symbol and in total, matching sells to buys first-in, first-out.
@@ -153,10 +172,22 @@ def get_realized_pnl(portfolio: PortfolioDep, session: SessionDep) -> RealizedPn
     Only symbols with at least one sell are listed. Oversells can't occur here: they are
     rejected with 422 when trades are added.
     """
-    stmt = (
-        select(models.Trade)
-        .where(models.Trade.portfolio_id == portfolio.id)
-        .order_by(models.Trade.executed_at, models.Trade.id)  # FIFO needs execution order
-    )
-    symbols, total = compute_realized_pnl(session.scalars(stmt))
+    symbols, total = compute_realized_pnl(_trades_in_execution_order(session, portfolio.id))
     return RealizedPnl(portfolio_id=portfolio.id, symbols=symbols, total=total)
+
+
+@router.get("/{portfolio_id}/value", response_model=PortfolioValue)
+def get_portfolio_value(
+    portfolio: PortfolioDep,  # resolved first, so an unknown id is a 404 before any price work
+    session: SessionDep,
+    prices: Annotated[PriceProvider, Depends(get_price_provider)],
+) -> PortfolioValue:
+    """Market value and unrealized P&L of each open position at its latest end-of-day close.
+
+    Prices come through the price cache: at most one API call per symbol per day, and the
+    cached price (with `price_stale: true`) when the API is down. If a symbol has no price at
+    all, the response is 503 naming it.
+    """
+    holdings = compute_holdings(_trades_in_execution_order(session, portfolio.id))
+    quotes = {symbol: prices.latest_close(symbol) for symbol in holdings}  # dict comprehension
+    return value_holdings(portfolio.id, holdings, quotes)

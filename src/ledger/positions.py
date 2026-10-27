@@ -76,27 +76,38 @@ def _match_fifo(trades: Iterable[TradeLike]) -> tuple[Lots, dict[str, Decimal]]:
     return lots, realized
 
 
+def compute_holdings(trades: Iterable[TradeLike]) -> dict[str, tuple[Decimal, Decimal]]:
+    """Open holdings as {symbol: (quantity, cost)}, sorted by symbol. Closed ones are omitted.
+
+    Cost is the exact cost of the remaining FIFO lots (no rounding), so valuation can use it
+    without the error that quantity x rounded avg_cost would add. Trades must be in order.
+    """
+    lots, _ = _match_fifo(trades)  # _ = "ignore this value" by convention
+
+    holdings = {}
+    for symbol in sorted(lots):
+        queue = lots[symbol]
+        quantity = sum((q for q, _ in queue), Decimal(0))
+        if quantity == 0:
+            continue
+        holdings[symbol] = (quantity, sum((q * p for q, p in queue), Decimal(0)))
+    return holdings
+
+
+def average_cost(quantity: Decimal, cost: Decimal) -> Decimal:
+    return (cost / quantity).quantize(COST_PLACES)
+
+
 def compute_positions(trades: Iterable[TradeLike]) -> list[Position]:
     """Open positions per symbol, sorted by symbol. Trades must be in execution order.
 
     Each BUY adds a lot; each SELL consumes lots oldest-first (FIFO). Average cost is the
     cost of the remaining lots divided by the quantity held. Closed positions are omitted.
     """
-    lots, _ = _match_fifo(trades)  # _ = "ignore this value" by convention
-
-    positions = []
-    for symbol in sorted(lots):
-        queue = lots[symbol]
-        quantity = sum((q for q, _ in queue), Decimal(0))
-        if quantity == 0:
-            continue
-        cost = sum((q * p for q, p in queue), Decimal(0))
-        positions.append(
-            Position(
-                symbol=symbol, quantity=quantity, avg_cost=(cost / quantity).quantize(COST_PLACES)
-            )
-        )
-    return positions
+    return [
+        Position(symbol=symbol, quantity=quantity, avg_cost=average_cost(quantity, cost))
+        for symbol, (quantity, cost) in compute_holdings(trades).items()
+    ]
 
 
 def compute_realized_pnl(trades: Iterable[TradeLike]) -> tuple[list[SymbolPnl], Decimal]:

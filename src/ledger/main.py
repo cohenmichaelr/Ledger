@@ -5,7 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from ledger.api import health, portfolios, trades
+from ledger.api.errors import market_data_unavailable
 from ledger.db import Base, engine
+from ledger.market_data import MarketDataError
 
 
 @asynccontextmanager
@@ -20,6 +22,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(trades.router)
     app.include_router(portfolios.router)
+    app.add_exception_handler(MarketDataError, market_data_unavailable)
     return app
 
 

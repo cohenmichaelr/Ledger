@@ -104,6 +104,7 @@ curl -X POST http://127.0.0.1:8000/portfolios/1/trades -H "Content-Type: applica
 curl -F "file=@samples/trades.csv" http://127.0.0.1:8000/portfolios/1/trades
 curl http://127.0.0.1:8000/portfolios/1/trades
 curl http://127.0.0.1:8000/portfolios/1/pnl
+curl http://127.0.0.1:8000/portfolios/1/value
 ```
 
 ### Realized P&L
@@ -144,6 +145,35 @@ and sells span lots, take losses and use fractional quantities. `tests/test_pnl_
 the trades and asserts `/pnl` matches the hand calculation to the cent (AAPL 1,152.75, MSFT
 -221.40, NVDA 11.925, total 943.275). Both files open in Excel, and the trades file can be
 uploaded through `/docs` to see the same result.
+
+### Valuation and unrealized P&L
+
+`GET /portfolios/{id}/value` values each open position at its latest end-of-day close
+(see [Market data](#market-data)) and returns the portfolio totals:
+
+```json
+{"portfolio_id": 1,
+ "positions": [{"symbol": "AAPL", "quantity": "15.000000", "avg_cost": "186.666667",
+                "cost_basis": "2800.000000", "price": "200.000000", "price_as_of": "2026-10-23",
+                "price_stale": false, "market_value": "3000.000000",
+                "unrealized_pnl": "200.000000"}],
+ "total_market_value": "3000.000000",
+ "total_cost_basis": "2800.000000",
+ "total_unrealized_pnl": "200.000000"}
+```
+
+- `cost_basis` is the exact cost of the open FIFO lots, the same lots `avg_cost` comes from.
+- `unrealized_pnl` is `market_value - cost_basis`. Figures are rounded to 6 places per symbol,
+  and each total is the sum of those figures.
+- `price_as_of` is the trading day of the close. `price_stale` is `true` when the price API
+  failed and the cached price was used.
+- Closed positions are left out, and an empty portfolio returns zero totals without calling
+  the price API.
+- `503` when a symbol has no price at all (API down and never cached, or no API key), with a
+  message naming the problem. Unknown portfolio: `404`.
+
+`tests/test_valuation.py` checks the sample CSV by hand at fixed fake prices; no test calls
+the real price API.
 
 ### CSV import
 
@@ -278,6 +308,7 @@ src/ledger/
   positions.py   FIFO position and realized P&L math (pure functions)
   market_data.py end-of-day prices: PriceProvider interface + Tiingo adapter
   price_cache.py prices cached in the database, at most one fetch per symbol per day
+  valuation.py   market value and unrealized P&L at given prices (pure function)
 samples/       sample trades CSV
 tests/         pytest; conftest.py = fixtures
 ```

@@ -3,7 +3,7 @@
 C# analogy: DTOs with DataAnnotations validation. Keep these separate from ORM models.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
@@ -42,6 +42,26 @@ class RealizedPnl(BaseModel):
     portfolio_id: int
     symbols: list[SymbolPnl]
     total: Decimal
+
+
+class PositionValue(BaseModel):
+    symbol: str
+    quantity: Decimal
+    avg_cost: Decimal
+    cost_basis: Decimal
+    price: Decimal  # latest end-of-day close
+    price_as_of: date  # trading day of that close
+    price_stale: bool  # True when the price API failed and the cached price was used
+    market_value: Decimal
+    unrealized_pnl: Decimal
+
+
+class PortfolioValue(BaseModel):
+    portfolio_id: int
+    positions: list[PositionValue]
+    total_market_value: Decimal
+    total_cost_basis: Decimal
+    total_unrealized_pnl: Decimal
 
 
 # Annotated[type, constraints] attaches validation to a type, like [StringLength] on a C# property
