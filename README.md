@@ -309,6 +309,7 @@ src/ledger/
   market_data.py end-of-day prices: PriceProvider interface + Tiingo adapter
   price_cache.py prices cached in the database, at most one fetch per symbol per day
   valuation.py   market value and unrealized P&L at given prices (pure function)
+  risk.py        risk metrics over a valued portfolio: exposure and concentration
 samples/       sample trades CSV
 tests/         pytest; conftest.py = fixtures
 ```

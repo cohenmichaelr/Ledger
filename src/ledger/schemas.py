@@ -64,6 +64,17 @@ class PortfolioValue(BaseModel):
     total_unrealized_pnl: Decimal
 
 
+class SymbolExposure(BaseModel):
+    symbol: str
+    market_value: Decimal
+    percent: Decimal  # share of portfolio market value, 2 places
+
+
+class Exposure(BaseModel):
+    exposures: list[SymbolExposure]  # sorted by symbol; percents sum to exactly 100.00
+    concentration: SymbolExposure | None  # the largest position; None for an empty portfolio
+
+
 # Annotated[type, constraints] attaches validation to a type, like [StringLength] on a C# property
 PortfolioName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
